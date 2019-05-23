@@ -8,7 +8,8 @@ type CPU struct {
 	pc        uint16
 	progStack stack.Stack
 	registers map[uint8]uint8
-	vf        uint16
+	vf        bool
+	i         uint16
 }
 
 func (cpu CPU) SYS(instruction uint16) {
@@ -77,13 +78,51 @@ func (cpu *CPU) XOR(instruction uint16) {
 }
 
 func (cpu *CPU) ADDVY(instruction uint16) {
-	added := cpu.getVx(instruction) ^ cpu.getVy(instruction)
-	if added > 255 {
-		cpu.vf = 1
-	} else {
-		cpu.vf = 0
-	}
+	vx := cpu.getVx(instruction)
+	added := vx + cpu.getVy(instruction)
+	cpu.vf = vx > added
 	cpu.setRegisterFromVx(instruction, added)
+}
+
+func (cpu *CPU) SUB(instruction uint16) {
+	vx := cpu.getVx(instruction)
+	vy := cpu.getVy(instruction)
+	cpu.vf = vx > vy
+	cpu.setRegisterFromVx(instruction, vx-vy)
+}
+
+func (cpu *CPU) SHR(instruction uint16) {
+	vx := cpu.getVx(instruction)
+	cpu.vf = ((vx << 7) & 0x80) == 0x80
+	cpu.setRegisterFromVx(instruction, vx>>2)
+}
+
+func (cpu *CPU) SHL(instruction uint16) {
+	vx := cpu.getVx(instruction)
+	cpu.vf = ((vx >> 7) & 0x01) == 0x01
+	cpu.setRegisterFromVx(instruction, vx<<2)
+}
+
+func (cpu *CPU) SNE(instruction uint16) {
+	vx := cpu.getVx(instruction)
+	vy := cpu.getVy(instruction)
+	if vx != vy {
+		cpu.pc += 2
+	}
+}
+
+func (cpu *CPU) LD(instruction uint16) {
+}
+
+func (cpu *CPU) LD(instruction uint16) {
+	cpu.i = instruction & 0x0fff
+}
+
+func (cpu *CPU) SUBN(instruction uint16) {
+	vx := cpu.getVx(instruction)
+	vy := cpu.getVy(instruction)
+	cpu.vf = vy > vx
+	cpu.setRegisterFromVx(instruction, vy-vx)
 }
 
 func (cpu *CPU) setRegisterFromVx(instruction uint16, value uint8) {
