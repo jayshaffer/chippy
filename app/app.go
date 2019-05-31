@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
+	"github.com/jayshaffer/chippy"
 )
 
 func main() {
-	fmt.Print("Something")
+	go chippy.OpenScreen()
+	messages := make(chan chippy.ScreenBuffer)
 }
