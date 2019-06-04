@@ -12,7 +12,7 @@ type CPU struct {
 	PC        uint16
 	ProgStack stack.Stack
 	Registers map[uint8]uint8
-	PRM       Memory
+	PRM       *Memory
 	VF        bool
 	I         uint16
 	SP        uint8
@@ -20,29 +20,28 @@ type CPU struct {
 	St        uint8
 }
 
-func (cpu *CPU) Run(memory *Memory) {
+func (cpu *CPU) Run() {
 	cpu.PC = uint16(0x0200)
 	for cpu.PC >= 0x0200 {
-		cpu.command(cpu.LoadCommandBytes(memory))
-		cpu.LogStatus(memory)
+		cpu.LogStatus()
+		cpu.command(cpu.LoadCommandBytes())
 		cpu.PC += 2
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-func (cpu *CPU) LoadCommandBytes(memory *Memory) uint16 {
-	first := memory.ProgData[cpu.PC]
-	second := memory.ProgData[cpu.PC+1]
+func (cpu *CPU) LoadCommandBytes() uint16 {
+	first := cpu.PRM.ProgData[cpu.PC]
+	second := cpu.PRM.ProgData[cpu.PC+1]
 	return binary.BigEndian.Uint16([]byte{first, second})
 }
 
-func (cpu *CPU) LogStatus(memory *Memory) {
-	//fmt.Printf("Registers: %v\n", cpu.Registers)
-	fmt.Printf("Command: 0x%x\n", cpu.LoadCommandBytes(memory))
-	fmt.Printf("PC: 0x%x | VF: %d | I: 0x%x | Dt: 0x%x | St: 0x%x | SP: 0x%x\n", cpu.PC, cpu.VF, cpu.I, cpu.Dt, cpu.St, cpu.SP)
+func (cpu *CPU) LogStatus() {
+	fmt.Printf("Command: 0x%x\n", cpu.LoadCommandBytes())
+	fmt.Printf("PC: 0x%x | VF: %t | I: 0x%x | Dt: 0x%x | St: 0x%x | SP: 0x%x\n", cpu.PC, cpu.VF, cpu.I, cpu.Dt, cpu.St, cpu.SP)
 }
 
-func (cpu *CPU) Boot() {
+func (cpu *CPU) Boot(memory *Memory) {
 	cpu.PC = 0
 	cpu.VF = false
 	cpu.I = 0
@@ -50,6 +49,7 @@ func (cpu *CPU) Boot() {
 	cpu.Dt = 0
 	cpu.St = 0
 	cpu.ProgStack = *stack.New()
+	cpu.PRM = memory
 	cpu.Registers = map[uint8]uint8{
 		0x00: 0,
 		0x01: 0,
@@ -158,7 +158,7 @@ func (cpu *CPU) SYS(instruction uint16) {
 }
 
 func (cpu *CPU) CLS(instruction uint16) {
-	//Clear the screen
+	cpu.PRM.ClearDisplay()
 }
 
 func (cpu *CPU) RET(instruction uint16) {
@@ -260,7 +260,27 @@ func (cpu *CPU) JP0(instruction uint16) {
 }
 
 func (cpu *CPU) DRW(instruction uint16) {
-	//show sprite
+	vx := cpu.getVx(instruction)
+	vy := cpu.getVy(instruction)
+	fmt.Println(vx)
+	nib := getNib(instruction)
+	address := cpu.I
+	for i := 0; i < int(nib); i++ {
+		addressByte := cpu.PRM.ProgData[address]
+		var mask uint8 = 0x01
+		for j := 0; j < 8; j++ {
+			x := vx + uint8(j)
+			if x > 63 {
+				x = 0
+			}
+			current := cpu.PRM.DisplayMem[x][vy]
+			result := current ^ (addressByte>>uint(j))&mask
+			cpu.VF = (result == 0) && current == 1 && !cpu.VF
+			cpu.PRM.DisplayMem[x][vy] = result
+		}
+		address++
+		vy++
+	}
 }
 
 func (cpu *CPU) SKP(instruction uint16) {
@@ -292,19 +312,27 @@ func (cpu *CPU) ADDI(instruction uint16) {
 }
 
 func (cpu *CPU) LDF(instruction uint16) {
-	//Set I = location of sprite for digit Vx.
+	cpu.I = uint16(0x0100) + (uint16(cpu.getVx(instruction)))
 }
 
 func (cpu *CPU) LDB(instruction uint16) {
-	//Store BCD representation of Vx in memory locations I, I+1, and I+2.
+	vx := cpu.getVx(instruction)
+	fmt.Println(vx / 10)
+	cpu.PRM.ProgData[cpu.I] = vx / 100
+	cpu.PRM.ProgData[cpu.I+1] = vx % 100 / 10
+	cpu.PRM.ProgData[cpu.I+2] = vx % 10
 }
 
 func (cpu *CPU) LDIVX(instruction uint16) {
-	//Store Registers V0 through Vx in memory starting at location I.
+	for i := uint8(0); i < 16; i++ {
+		cpu.PRM.ProgData[cpu.I+uint16(i)] = cpu.Registers[i]
+	}
 }
 
 func (cpu *CPU) LDVXI(instruction uint16) {
-	//Read Registers V0 through Vx from memory starting at location I.
+	for i := uint8(0); i < 16; i++ {
+		cpu.Registers[i] = cpu.PRM.ProgData[cpu.I+uint16(i)]
+	}
 }
 
 func (cpu *CPU) RND(instruction uint16) {
@@ -346,6 +374,10 @@ func (cpu *CPU) getVx(instruction uint16) uint8 {
 
 func (cpu *CPU) getVy(instruction uint16) uint8 {
 	return cpu.Registers[uint8(getVyAddress(instruction))]
+}
+
+func getNib(instruction uint16) uint8 {
+	return uint8(instruction & 0x000f)
 }
 
 func getKk(instruction uint16) uint8 {
