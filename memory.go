@@ -1,15 +1,22 @@
 package chippy
 
 type Memory struct {
-	ProgData   map[uint16]uint8
-	SystemMem  []bool
-	DisplayMem [][]uint8
+	ProgData    map[uint16]uint8
+	SystemMem   map[uint8]uint8
+	KeyboardMem map[uint8]uint8
+	DisplayMem  [][]uint8
+}
+
+type MemChunk struct {
+	Key   uint16
+	Value uint8
 }
 
 func Load(uint8s []byte) *Memory {
 	mem := new(Memory)
 	mem.ProgData = make(map[uint16]uint8, 3895)
-	mem.SystemMem = make([]bool, 16)
+	mem.SystemMem = make(map[uint8]uint8, 256)
+	mem.KeyboardMem = make(map[uint8]uint8, 16)
 	mem.ClearDisplay()
 	var index uint16
 	index = 0x200

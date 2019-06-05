@@ -18,15 +18,19 @@ type CPU struct {
 	SP        uint8
 	Dt        uint8
 	St        uint8
+	Waiting   bool
 }
 
 func (cpu *CPU) Run() {
 	cpu.PC = uint16(0x0200)
 	for cpu.PC >= 0x0200 {
-		cpu.LogStatus()
+		//cpu.LogStatus()
 		cpu.command(cpu.LoadCommandBytes())
-		cpu.PC += 2
-		time.Sleep(10 * time.Millisecond)
+		if !cpu.Waiting {
+			fmt.Println("Waiting...")
+			cpu.PC += 2
+		}
+		//time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -154,7 +158,6 @@ func (cpu *CPU) command(instruction uint16) {
 }
 
 func (cpu *CPU) SYS(instruction uint16) {
-	//Unused??
 }
 
 func (cpu *CPU) CLS(instruction uint16) {
@@ -162,7 +165,7 @@ func (cpu *CPU) CLS(instruction uint16) {
 }
 
 func (cpu *CPU) RET(instruction uint16) {
-	//Return from function
+	cpu.PC = cpu.ProgStack.Pop().(uint16)
 }
 
 func (cpu *CPU) JP(instruction uint16) {
@@ -262,7 +265,6 @@ func (cpu *CPU) JP0(instruction uint16) {
 func (cpu *CPU) DRW(instruction uint16) {
 	vx := cpu.getVx(instruction)
 	vy := cpu.getVy(instruction)
-	fmt.Println(vx)
 	nib := getNib(instruction)
 	address := cpu.I
 	for i := 0; i < int(nib); i++ {
@@ -284,11 +286,17 @@ func (cpu *CPU) DRW(instruction uint16) {
 }
 
 func (cpu *CPU) SKP(instruction uint16) {
-	//Skip if reg matched key is pressed
+	vx := cpu.getVx(instruction)
+	if val, ok := cpu.PRM.KeyboardMem[vx]; ok && val > 0 {
+		cpu.PC += 2
+	}
 }
 
 func (cpu *CPU) SKNP(instruction uint16) {
-	//Skip if reg matched key is not pressed
+	vx := cpu.getVx(instruction)
+	if val, ok := cpu.PRM.KeyboardMem[vx]; !ok || val == 0 {
+		cpu.PC += 2
+	}
 }
 
 func (cpu *CPU) LD_VX_DT(instruction uint16) {
@@ -300,7 +308,16 @@ func (cpu *CPU) LDDT(instruction uint16) {
 }
 
 func (cpu *CPU) LD_VX_K(instruction uint16) {
-	//Wait for a key press, store the value of the key in Vx.
+	for i := range cpu.PRM.KeyboardMem {
+		pressed := cpu.PRM.KeyboardMem[i]
+		if pressed > 0 {
+			fmt.Println("Pressed")
+			cpu.setRegisterFromVx(instruction, pressed)
+			cpu.Waiting = false
+			return
+		}
+	}
+	cpu.Waiting = true
 }
 
 func (cpu *CPU) LDST(instruction uint16) {
@@ -317,7 +334,6 @@ func (cpu *CPU) LDF(instruction uint16) {
 
 func (cpu *CPU) LDB(instruction uint16) {
 	vx := cpu.getVx(instruction)
-	fmt.Println(vx / 10)
 	cpu.PRM.ProgData[cpu.I] = vx / 100
 	cpu.PRM.ProgData[cpu.I+1] = vx % 100 / 10
 	cpu.PRM.ProgData[cpu.I+2] = vx % 10
