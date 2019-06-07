@@ -34,7 +34,7 @@ func (cpu *CPU) Run() {
 			cpu.PC += 2
 		}
 		cpu.Jumped = false
-		time.Sleep(1 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -181,6 +181,9 @@ func (cpu *CPU) SYS(instruction uint16) {
 }
 
 func (cpu *CPU) CLS(instruction uint16) {
+	for {
+		fmt.Println("Clearing")
+	}
 	cpu.PRM.ClearDisplay()
 }
 
@@ -222,7 +225,6 @@ func (cpu *CPU) LD(instruction uint16) {
 
 func (cpu *CPU) ADDKK(instruction uint16) {
 	total := cpu.getVx(instruction) + getKk(instruction)
-	fmt.Println(total)
 	cpu.setRegisterFromVx(instruction, total)
 }
 
@@ -290,26 +292,30 @@ func (cpu *CPU) DRW(instruction uint16) {
 	vy := cpu.getVy(instruction)
 	nib := getNib(instruction)
 	address := cpu.I
+	var mask uint8 = 0x01
+	col := false
 	for i := 0; i < int(nib); i++ {
 		addressByte := cpu.PRM.ProgData[address]
-		var mask uint8 = 0x01
+		y := vy % 32
 		for j := 0; j < 8; j++ {
-			x := vx + uint8(j)
-			if x > 63 {
-				x -= 63
-			}
-			current := cpu.PRM.DisplayMem[x][vy]
-			bit := addressByte >> uint(j) & mask
+			x := (vx + uint8(j)) % 64
+			current := cpu.PRM.DisplayMem[x][y]
+			bit := addressByte >> uint(7-j) & mask
 			result := current ^ bit
-			if !cpu.VF {
-				cpu.VF = result == 0 && bit == 1
+			if !col {
+				fmt.Printf("Collided")
+				col = result == 0 && bit == 1
 			}
-			fmt.Println(cpu.VF)
-			cpu.PRM.DisplayMem[x][vy] = result
+			// fmt.Printf("X: %d Y: %d\n", x, y)
+			// fmt.Printf("Current: %x\n", current)
+			// fmt.Printf("Bit: %x\n", bit)
+			// fmt.Printf("Result: %x\n", result)
+			cpu.PRM.DisplayMem[x][y] = result
 		}
 		address++
 		vy++
 	}
+	cpu.VF = col
 }
 
 func (cpu *CPU) SKP(instruction uint16) {
@@ -335,11 +341,9 @@ func (cpu *CPU) LDDT(instruction uint16) {
 }
 
 func (cpu *CPU) LD_VX_K(instruction uint16) {
-	fmt.Printf("Keyboard Mem: %x", cpu.PRM.KeyboardMem)
 	for i := range cpu.PRM.KeyboardMem {
 		pressed := cpu.PRM.KeyboardMem[i]
 		if pressed > 0 {
-			fmt.Println("Pressed")
 			cpu.setRegisterFromVx(instruction, pressed)
 			cpu.Waiting = false
 			return

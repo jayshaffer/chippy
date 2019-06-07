@@ -19,33 +19,23 @@ func run() int {
 	var filename = flag.String("filename", "", "full path to CHIP-8 ROM")
 	flag.Parse()
 	mem := StartCPU(filename)
-
 	if err := sdl.Init(sdl.INIT_EVERYTHING); err != nil {
 		panic(err)
 	}
-	defer sdl.Quit()
-
 	window, err := sdl.CreateWindow(Title, sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
 		Width, Height, sdl.WINDOW_SHOWN)
-	surface, err := window.GetSurface()
-	surface.FillRect(nil, 0)
+	surface, _ := window.GetSurface()
+	defer window.Destroy()
+	defer sdl.Quit()
 	if err != nil {
 		panic(err)
 	}
+
 	running := true
 	keyboard := chippy.NewKeyboard(mem)
+	var rects []sdl.Rect
+
 	for running {
-		for i := 0; i < 64; i++ {
-			go func(i int) {
-				for j := 0; j < 32; j++ {
-					if mem.DisplayMem[i][j] > 0 {
-						rect := sdl.Rect{int32(i * XScale), int32(j * YScale), XScale, YScale}
-						surface.FillRect(&rect, 0xffffffff)
-					}
-				}
-			}(i)
-		}
-		window.UpdateSurface()
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
 			case *sdl.KeyboardEvent:
@@ -55,6 +45,24 @@ func run() int {
 				break
 			}
 		}
+
+		rects = []sdl.Rect{}
+
+		for i := 0; i < 64; i++ {
+			func(i int) {
+				for j := 0; j < 32; j++ {
+					if mem.DisplayMem[i][j] > 0 {
+						rects = append(rects, sdl.Rect{int32(i * XScale), int32(j * YScale), XScale, YScale})
+					}
+				}
+			}(i)
+		}
+
+		if len(rects) > 0 {
+			surface.FillRect(nil, 0)
+			surface.FillRects(rects, 0xffffffff)
+		}
+		window.UpdateSurface()
 	}
 	return 0
 }
