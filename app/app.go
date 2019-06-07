@@ -11,8 +11,8 @@ const (
 	Title  = "Chippy"
 	Width  = 800
 	Height = 600
-	XScale = 8
-	YScale = 6
+	XScale = 10
+	YScale = 10
 )
 
 func run() int {

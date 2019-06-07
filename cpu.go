@@ -9,28 +9,43 @@ import (
 )
 
 type CPU struct {
-	PC        uint16
-	ProgStack stack.Stack
-	Registers map[uint8]uint8
-	PRM       *Memory
-	VF        bool
-	I         uint16
-	SP        uint8
-	Dt        uint8
-	St        uint8
-	Waiting   bool
+	PC         uint16
+	ProgStack  stack.Stack
+	Registers  map[uint8]uint8
+	PRM        *Memory
+	VF         bool
+	I          uint16
+	SP         uint8
+	Dt         uint8
+	St         uint8
+	Waiting    bool
+	Jumped     bool
+	DelayTimer *time.Ticker
 }
 
 func (cpu *CPU) Run() {
 	cpu.PC = uint16(0x0200)
+	defer cpu.DelayTimer.Stop()
 	for cpu.PC >= 0x0200 {
 		//cpu.LogStatus()
+		cpu.HandleTimerTick()
 		cpu.command(cpu.LoadCommandBytes())
-		if !cpu.Waiting {
-			fmt.Println("Waiting...")
+		if !cpu.Waiting && !cpu.Jumped {
 			cpu.PC += 2
 		}
-		//time.Sleep(10 * time.Millisecond)
+		cpu.Jumped = false
+		time.Sleep(1 * time.Millisecond)
+	}
+}
+
+func (cpu *CPU) HandleTimerTick() {
+	select {
+	case <-cpu.DelayTimer.C:
+		if cpu.Dt > 0 {
+			cpu.Dt--
+		}
+	default:
+		return
 	}
 }
 
@@ -43,17 +58,22 @@ func (cpu *CPU) LoadCommandBytes() uint16 {
 func (cpu *CPU) LogStatus() {
 	fmt.Printf("Command: 0x%x\n", cpu.LoadCommandBytes())
 	fmt.Printf("PC: 0x%x | VF: %t | I: 0x%x | Dt: 0x%x | St: 0x%x | SP: 0x%x\n", cpu.PC, cpu.VF, cpu.I, cpu.Dt, cpu.St, cpu.SP)
+	fmt.Printf("Registers: %x\n", cpu.Registers)
 }
 
 func (cpu *CPU) Boot(memory *Memory) {
+	cpu.DelayTimer = time.NewTicker(time.Second / 60)
+	cpu.Dt = 0
 	cpu.PC = 0
 	cpu.VF = false
 	cpu.I = 0
 	cpu.SP = 0
 	cpu.Dt = 0
 	cpu.St = 0
+	cpu.Jumped = false
 	cpu.ProgStack = *stack.New()
 	cpu.PRM = memory
+	cpu.Waiting = false
 	cpu.Registers = map[uint8]uint8{
 		0x00: 0,
 		0x01: 0,
@@ -169,7 +189,8 @@ func (cpu *CPU) RET(instruction uint16) {
 }
 
 func (cpu *CPU) JP(instruction uint16) {
-	cpu.PC = instruction & 0x0fff
+	cpu.PC = (instruction & 0x0fff)
+	cpu.Jumped = true
 }
 
 func (cpu *CPU) CALL(instruction uint16) {
@@ -201,6 +222,7 @@ func (cpu *CPU) LD(instruction uint16) {
 
 func (cpu *CPU) ADDKK(instruction uint16) {
 	total := cpu.getVx(instruction) + getKk(instruction)
+	fmt.Println(total)
 	cpu.setRegisterFromVx(instruction, total)
 }
 
@@ -260,6 +282,7 @@ func (cpu *CPU) LDI(instruction uint16) {
 
 func (cpu *CPU) JP0(instruction uint16) {
 	cpu.PC = instruction&0x0fff + uint16(cpu.Registers[0])
+	cpu.Jumped = true
 }
 
 func (cpu *CPU) DRW(instruction uint16) {
@@ -273,11 +296,15 @@ func (cpu *CPU) DRW(instruction uint16) {
 		for j := 0; j < 8; j++ {
 			x := vx + uint8(j)
 			if x > 63 {
-				x = 0
+				x -= 63
 			}
 			current := cpu.PRM.DisplayMem[x][vy]
-			result := current ^ (addressByte>>uint(j))&mask
-			cpu.VF = (result == 0) && current == 1 && !cpu.VF
+			bit := addressByte >> uint(j) & mask
+			result := current ^ bit
+			if !cpu.VF {
+				cpu.VF = result == 0 && bit == 1
+			}
+			fmt.Println(cpu.VF)
 			cpu.PRM.DisplayMem[x][vy] = result
 		}
 		address++
@@ -308,6 +335,7 @@ func (cpu *CPU) LDDT(instruction uint16) {
 }
 
 func (cpu *CPU) LD_VX_K(instruction uint16) {
+	fmt.Printf("Keyboard Mem: %x", cpu.PRM.KeyboardMem)
 	for i := range cpu.PRM.KeyboardMem {
 		pressed := cpu.PRM.KeyboardMem[i]
 		if pressed > 0 {
@@ -353,8 +381,8 @@ func (cpu *CPU) LDVXI(instruction uint16) {
 
 func (cpu *CPU) RND(instruction uint16) {
 	seed := rand.NewSource(time.Now().UnixNano())
-	r := rand.New(seed)
-	cpu.setRegisterFromVx(instruction, uint8(r.Intn(256)))
+	r := rand.New(seed).Intn(256) & int(getKk(instruction))
+	cpu.setRegisterFromVx(instruction, uint8(r))
 }
 
 func (cpu *CPU) SUBN(instruction uint16) {
@@ -377,11 +405,11 @@ func (cpu *CPU) setRegister(address uint8, value uint8) {
 }
 
 func getVxAddress(instruction uint16) uint8 {
-	return uint8((instruction >> 8) & 0x0f)
+	return uint8((instruction & 0x0f00) >> 8)
 }
 
 func getVyAddress(instruction uint16) uint8 {
-	return uint8((instruction >> 4) & 0x0f)
+	return uint8((instruction & 0x00f0) >> 4)
 }
 
 func (cpu *CPU) getVx(instruction uint16) uint8 {
