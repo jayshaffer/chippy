@@ -13,7 +13,6 @@ type CPU struct {
 	ProgStack  stack.Stack
 	Registers  map[uint8]uint8
 	PRM        *Memory
-	VF         bool
 	I          uint16
 	SP         uint8
 	Dt         uint8
@@ -34,7 +33,7 @@ func (cpu *CPU) Run() {
 			cpu.PC += 2
 		}
 		cpu.Jumped = false
-		time.Sleep(5 * time.Millisecond)
+		time.Sleep(2 * time.Millisecond)
 	}
 }
 
@@ -57,7 +56,7 @@ func (cpu *CPU) LoadCommandBytes() uint16 {
 
 func (cpu *CPU) LogStatus() {
 	fmt.Printf("Command: 0x%x\n", cpu.LoadCommandBytes())
-	fmt.Printf("PC: 0x%x | VF: %t | I: 0x%x | Dt: 0x%x | St: 0x%x | SP: 0x%x\n", cpu.PC, cpu.VF, cpu.I, cpu.Dt, cpu.St, cpu.SP)
+	fmt.Printf("PC: 0x%x | I: 0x%x | Dt: 0x%x | St: 0x%x | SP: 0x%x\n", cpu.PC, cpu.I, cpu.Dt, cpu.St, cpu.SP)
 	fmt.Printf("Registers: %x\n", cpu.Registers)
 }
 
@@ -65,7 +64,6 @@ func (cpu *CPU) Boot(memory *Memory) {
 	cpu.DelayTimer = time.NewTicker(time.Second / 60)
 	cpu.Dt = 0
 	cpu.PC = 0
-	cpu.VF = false
 	cpu.I = 0
 	cpu.SP = 0
 	cpu.Dt = 0
@@ -181,9 +179,6 @@ func (cpu *CPU) SYS(instruction uint16) {
 }
 
 func (cpu *CPU) CLS(instruction uint16) {
-	for {
-		fmt.Println("Clearing")
-	}
 	cpu.PRM.ClearDisplay()
 }
 
@@ -247,26 +242,26 @@ func (cpu *CPU) XOR(instruction uint16) {
 func (cpu *CPU) ADDVY(instruction uint16) {
 	vx := cpu.getVx(instruction)
 	added := vx + cpu.getVy(instruction)
-	cpu.VF = vx > added
+	cpu.setVF(vx > added)
 	cpu.setRegisterFromVx(instruction, added)
 }
 
 func (cpu *CPU) SUB(instruction uint16) {
 	vx := cpu.getVx(instruction)
 	vy := cpu.getVy(instruction)
-	cpu.VF = vx > vy
+	cpu.setVF(vx > vy)
 	cpu.setRegisterFromVx(instruction, vx-vy)
 }
 
 func (cpu *CPU) SHR(instruction uint16) {
 	vx := cpu.getVx(instruction)
-	cpu.VF = ((vx << 7) & 0x80) == 0x80
+	cpu.setVF(((vx << 7) & 0x80) == 0x80)
 	cpu.setRegisterFromVx(instruction, vx>>2)
 }
 
 func (cpu *CPU) SHL(instruction uint16) {
 	vx := cpu.getVx(instruction)
-	cpu.VF = ((vx >> 7) & 0x01) == 0x01
+	cpu.setVF(((vx >> 7) & 0x01) == 0x01)
 	cpu.setRegisterFromVx(instruction, vx<<2)
 }
 
@@ -292,30 +287,30 @@ func (cpu *CPU) DRW(instruction uint16) {
 	vy := cpu.getVy(instruction)
 	nib := getNib(instruction)
 	address := cpu.I
-	var mask uint8 = 0x01
 	col := false
+	addressByte := cpu.PRM.ProgData[address]
 	for i := 0; i < int(nib); i++ {
-		addressByte := cpu.PRM.ProgData[address]
 		y := vy % 32
 		for j := 0; j < 8; j++ {
-			x := (vx + uint8(j)) % 64
-			current := cpu.PRM.DisplayMem[x][y]
-			bit := addressByte >> uint(7-j) & mask
-			result := current ^ bit
-			if !col {
-				fmt.Printf("Collided")
-				col = result == 0 && bit == 1
+			bit := (addressByte >> uint(7-j)) & 0x01
+			x := (uint16(vx) + uint16(j)) % 64
+			i := cpu.PRM.DisplayMem[x][y]
+			if !col && i == 1 {
+				col = bit == 1
+				fmt.Printf("%v\n", cpu.PRM.DisplayMem[x])
+				fmt.Printf("X: %d Y: %d\n", int(vx)+j, vy)
+				fmt.Printf("I: %x\n", i)
+				fmt.Printf("AddressByte: %x\n", addressByte)
+				fmt.Printf("Collided: %s\n", col)
+				fmt.Printf("Bit: %x\n\n", bit)
+				fmt.Printf("Nib: %x\n\n", nib)
 			}
-			// fmt.Printf("X: %d Y: %d\n", x, y)
-			// fmt.Printf("Current: %x\n", current)
-			// fmt.Printf("Bit: %x\n", bit)
-			// fmt.Printf("Result: %x\n", result)
-			cpu.PRM.DisplayMem[x][y] = result
+			cpu.PRM.DisplayMem[x][y] = i ^ bit
 		}
 		address++
 		vy++
 	}
-	cpu.VF = col
+	cpu.setVF(col)
 }
 
 func (cpu *CPU) SKP(instruction uint16) {
@@ -392,7 +387,7 @@ func (cpu *CPU) RND(instruction uint16) {
 func (cpu *CPU) SUBN(instruction uint16) {
 	vx := cpu.getVx(instruction)
 	vy := cpu.getVy(instruction)
-	cpu.VF = vy > vx
+	cpu.setVF(vy > vx)
 	cpu.setRegisterFromVx(instruction, vy-vx)
 }
 
@@ -406,6 +401,14 @@ func (cpu *CPU) setRegisterFromVy(instruction uint16, value uint8) {
 
 func (cpu *CPU) setRegister(address uint8, value uint8) {
 	cpu.Registers[address] = value
+}
+
+func (cpu *CPU) setVF(flag bool) {
+	if flag {
+		cpu.Registers[0x0f] = 0x01
+	} else {
+		cpu.Registers[0x0f] = 0
+	}
 }
 
 func getVxAddress(instruction uint16) uint8 {
