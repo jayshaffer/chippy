@@ -22,19 +22,15 @@ type CPU struct {
 	DelayTimer *time.Ticker
 }
 
-func (cpu *CPU) Run() {
+func (cpu *CPU) Tick() {
 	cpu.PC = uint16(0x0200)
-	defer cpu.DelayTimer.Stop()
-	for cpu.PC >= 0x0200 {
-		//cpu.LogStatus()
-		cpu.HandleTimerTick()
-		cpu.command(cpu.LoadCommandBytes())
-		if !cpu.Waiting && !cpu.Jumped {
-			cpu.PC += 2
-		}
-		cpu.Jumped = false
-		time.Sleep(2 * time.Millisecond)
+	cpu.LogStatus()
+	cpu.HandleTimerTick()
+	cpu.command(cpu.LoadCommandBytes())
+	if !cpu.Waiting && !cpu.Jumped {
+		cpu.PC += 2
 	}
+	cpu.Jumped = false
 }
 
 func (cpu *CPU) HandleTimerTick() {
@@ -295,17 +291,14 @@ func (cpu *CPU) DRW(instruction uint16) {
 			bit := (addressByte >> uint(7-j)) & 0x01
 			x := (uint16(vx) + uint16(j)) % 64
 			i := cpu.PRM.DisplayMem[x][y]
-			if !col && i == 1 {
-				col = bit == 1
-				fmt.Printf("%v\n", cpu.PRM.DisplayMem[x])
-				fmt.Printf("X: %d Y: %d\n", int(vx)+j, vy)
-				fmt.Printf("I: %x\n", i)
-				fmt.Printf("AddressByte: %x\n", addressByte)
-				fmt.Printf("Collided: %s\n", col)
-				fmt.Printf("Bit: %x\n\n", bit)
-				fmt.Printf("Nib: %x\n\n", nib)
+			result := uint8(bit)
+			if i == 1 && bit == 1 {
+				fmt.Printf("Bit: %v\n", bit)
+				fmt.Printf("X: %x, Y: %x\n", x, y)
+				result = 0
+				col = true
 			}
-			cpu.PRM.DisplayMem[x][y] = i ^ bit
+			cpu.PRM.DisplayMem[x][y] = result
 		}
 		address++
 		vy++
