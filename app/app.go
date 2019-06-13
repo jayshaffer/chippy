@@ -37,7 +37,7 @@ func run() int {
 	go func() {
 		for {
 			cpu.Tick()
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(1 * time.Millisecond)
 		}
 	}()
 

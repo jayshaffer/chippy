@@ -156,8 +156,10 @@ func (cpu *CPU) command(instruction uint16) {
 		switch command8 {
 		case 0x0007:
 			cpu.LD_VX_DT(instruction)
+			return
 		case 0x000A:
 			cpu.LD_VX_K(instruction)
+			return
 		}
 		switch command16 {
 		case 0x0015:
