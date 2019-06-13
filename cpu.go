@@ -23,7 +23,7 @@ type CPU struct {
 }
 
 func (cpu *CPU) Tick() {
-	cpu.LogStatus()
+	//cpu.LogStatus()
 	cpu.HandleTimerTick()
 	cpu.command(cpu.LoadCommandBytes())
 	if !cpu.Waiting && !cpu.Jumped {
@@ -151,17 +151,12 @@ func (cpu *CPU) command(instruction uint16) {
 			cpu.SKNP(instruction)
 		}
 	case 0xF000:
-		var command8 uint16 = instruction & 0x000f
 		var command16 uint16 = instruction & 0x00ff
-		switch command8 {
+		switch command16 {
 		case 0x0007:
 			cpu.LD_VX_DT(instruction)
-			return
 		case 0x000A:
 			cpu.LD_VX_K(instruction)
-			return
-		}
-		switch command16 {
 		case 0x0015:
 			cpu.LDDT(instruction)
 		case 0x0018:
@@ -371,20 +366,20 @@ func (cpu *CPU) LDVXVY(instruction uint16) {
 }
 
 func (cpu *CPU) LDB(instruction uint16) {
-	vx := cpu.getVx(instruction)
-	cpu.PRM.ProgData[cpu.I] = vx / 100
-	cpu.PRM.ProgData[cpu.I+1] = vx % 100 / 10
-	cpu.PRM.ProgData[cpu.I+2] = vx % 10
+	vx := int(cpu.getVx(instruction))
+	cpu.PRM.ProgData[cpu.I] = uint8(vx / 100)
+	cpu.PRM.ProgData[cpu.I+1] = uint8(vx % 100 / 10)
+	cpu.PRM.ProgData[cpu.I+2] = uint8(vx % 10)
 }
 
 func (cpu *CPU) LDIVX(instruction uint16) {
-	for i := uint8(0); i < 16; i++ {
+	for i := uint8(0); i <= cpu.getVx(instruction); i++ {
 		cpu.PRM.ProgData[cpu.I+uint16(i)] = cpu.Registers[i]
 	}
 }
 
 func (cpu *CPU) LDVXI(instruction uint16) {
-	for i := uint8(0); i < 16; i++ {
+	for i := uint8(0); i <= cpu.getVx(instruction); i++ {
 		cpu.Registers[i] = cpu.PRM.ProgData[cpu.I+uint16(i)]
 	}
 }
