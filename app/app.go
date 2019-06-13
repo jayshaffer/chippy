@@ -15,7 +15,7 @@ const (
 	Height = 600
 	XScale = 10
 	YScale = 10
-	FPS    = 60
+	FPS    = 60.0
 )
 
 func run() int {
@@ -34,10 +34,17 @@ func run() int {
 		panic(err)
 	}
 
+	go func() {
+		for {
+			cpu.Tick()
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+
 	running := true
 	keyboard := chippy.NewKeyboard(cpu.PRM)
 	lastRender := time.Now()
-	renderSpan := (1.0 / FPS)
+	renderSpan := ((time.Second * 1.0) / FPS)
 	for running {
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
@@ -47,12 +54,12 @@ func run() int {
 				running = false
 				break
 			}
-			if time.Now().Sub(lastRender).Seconds()/FPS > renderSpan {
-				cpu.Tick()
-				Render(cpu.PRM, surface)
-			}
-		}
 
+		}
+		if time.Now().Sub(lastRender) > renderSpan {
+			Render(cpu.PRM, surface)
+			lastRender = time.Now()
+		}
 		window.UpdateSurface()
 	}
 	return 0

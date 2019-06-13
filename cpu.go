@@ -23,7 +23,6 @@ type CPU struct {
 }
 
 func (cpu *CPU) Tick() {
-	cpu.PC = uint16(0x0200)
 	cpu.LogStatus()
 	cpu.HandleTimerTick()
 	cpu.command(cpu.LoadCommandBytes())
@@ -59,7 +58,7 @@ func (cpu *CPU) LogStatus() {
 func (cpu *CPU) Boot(memory *Memory) {
 	cpu.DelayTimer = time.NewTicker(time.Second / 60)
 	cpu.Dt = 0
-	cpu.PC = 0
+	cpu.PC = uint16(0x0200)
 	cpu.I = 0
 	cpu.SP = 0
 	cpu.Dt = 0
@@ -112,26 +111,29 @@ func (cpu *CPU) command(instruction uint16) {
 	case 0x7000:
 		cpu.ADDKK(instruction)
 	case 0x8000:
-		switch command := instruction; {
-		case (command & 0x8001) == 0x8001:
+		var command uint16 = instruction & 0x000f
+		switch command {
+		case 0x0000:
+			cpu.LDVXVY(instruction)
+		case 0x0001:
 			cpu.OR(instruction)
-		case (command & 0x8002) == 0x8002:
+		case 0x0002:
 			cpu.AND(instruction)
-		case (command & 0x8003) == 0x8003:
+		case 0x0003:
 			cpu.XOR(instruction)
-		case (command & 0x8004) == 0x8004:
+		case 0x0004:
 			cpu.ADDVY(instruction)
-		case (command & 0x8005) == 0x8005:
+		case 0x0005:
 			cpu.SUB(instruction)
-		case (command & 0x8006) == 0x8006:
+		case 0x0006:
 			cpu.SHR(instruction)
-		case (command & 0x8007) == 0x8007:
+		case 0x0007:
 			cpu.SUBN(instruction)
-		case (command & 0x800e) == 0x800e:
+		case 0x000e:
 			cpu.SHL(instruction)
 		}
 	case 0x9000:
-		cpu.SNE(instruction)
+		cpu.SNEVY(instruction)
 	case 0xA000:
 		cpu.LDI(instruction)
 	case 0xB000:
@@ -141,31 +143,36 @@ func (cpu *CPU) command(instruction uint16) {
 	case 0xD000:
 		cpu.DRW(instruction)
 	case 0xE000:
-		switch command := instruction; {
-		case (command & 0xe09e) == 0xe090:
+		var command uint16 = instruction & 0xf0ff
+		switch command {
+		case 0xe09e:
 			cpu.SKP(instruction)
-		case (command & 0xe0a1) == 0xe0a1:
+		case 0xe0a1:
 			cpu.SKNP(instruction)
 		}
 	case 0xF000:
-		switch command := instruction; {
-		case (command & 0xf007) == 0xf007:
+		var command8 uint16 = instruction & 0x000f
+		var command16 uint16 = instruction & 0x00ff
+		switch command8 {
+		case 0x0007:
 			cpu.LD_VX_DT(instruction)
-		case (command & 0xf00A) == 0xf00A:
+		case 0x000A:
 			cpu.LD_VX_K(instruction)
-		case (command & 0xf015) == 0xf015:
+		}
+		switch command16 {
+		case 0x0015:
 			cpu.LDDT(instruction)
-		case (command & 0xf018) == 0xf018:
+		case 0x0018:
 			cpu.LDST(instruction)
-		case (command & 0xf01E) == 0xf01E:
+		case 0x001E:
 			cpu.ADDI(instruction)
-		case (command & 0xf029) == 0xf029:
+		case 0x0029:
 			cpu.LDF(instruction)
-		case (command & 0xf033) == 0xf033:
+		case 0x0033:
 			cpu.LDB(instruction)
-		case (command & 0xf055) == 0xf055:
+		case 0x0055:
 			cpu.LDIVX(instruction)
-		case (command & 0xf065) == 0xf065:
+		case 0x0065:
 			cpu.LDVXI(instruction)
 		}
 	}
@@ -238,8 +245,8 @@ func (cpu *CPU) XOR(instruction uint16) {
 func (cpu *CPU) ADDVY(instruction uint16) {
 	vx := cpu.getVx(instruction)
 	added := vx + cpu.getVy(instruction)
-	cpu.setVF(vx > added)
-	cpu.setRegisterFromVx(instruction, added)
+	cpu.setVF(added > 255)
+	cpu.setRegisterFromVx(instruction, added&0xff)
 }
 
 func (cpu *CPU) SUB(instruction uint16) {
@@ -251,14 +258,14 @@ func (cpu *CPU) SUB(instruction uint16) {
 
 func (cpu *CPU) SHR(instruction uint16) {
 	vx := cpu.getVx(instruction)
-	cpu.setVF(((vx << 7) & 0x80) == 0x80)
-	cpu.setRegisterFromVx(instruction, vx>>2)
+	cpu.setVF((vx & 0x01) == 0x01)
+	cpu.setRegisterFromVx(instruction, vx>>1)
 }
 
 func (cpu *CPU) SHL(instruction uint16) {
 	vx := cpu.getVx(instruction)
 	cpu.setVF(((vx >> 7) & 0x01) == 0x01)
-	cpu.setRegisterFromVx(instruction, vx<<2)
+	cpu.setRegisterFromVx(instruction, vx<<1)
 }
 
 func (cpu *CPU) SNEVY(instruction uint16) {
@@ -284,21 +291,26 @@ func (cpu *CPU) DRW(instruction uint16) {
 	nib := getNib(instruction)
 	address := cpu.I
 	col := false
-	addressByte := cpu.PRM.ProgData[address]
+	if vy >= 32 {
+		vy = 0
+	}
+	if vx >= 64 {
+		vx = 0
+	}
 	for i := 0; i < int(nib); i++ {
-		y := vy % 32
+		addressByte := cpu.PRM.ProgData[address]
+		y := vy
 		for j := 0; j < 8; j++ {
-			bit := (addressByte >> uint(7-j)) & 0x01
-			x := (uint16(vx) + uint16(j)) % 64
-			i := cpu.PRM.DisplayMem[x][y]
-			result := uint8(bit)
-			if i == 1 && bit == 1 {
-				fmt.Printf("Bit: %v\n", bit)
-				fmt.Printf("X: %x, Y: %x\n", x, y)
-				result = 0
-				col = true
+			x := (uint16(vx) + uint16(j))
+			if x >= 64 || y >= 32 {
+				continue
 			}
-			cpu.PRM.DisplayMem[x][y] = result
+			spriteBit := (addressByte >> uint(7-j)) & 0x01
+			i := cpu.PRM.DisplayMem[x][y]
+			if !col {
+				col = i == 1 && spriteBit == 1
+			}
+			cpu.PRM.DisplayMem[x][y] = i ^ spriteBit
 		}
 		address++
 		vy++
@@ -350,6 +362,10 @@ func (cpu *CPU) ADDI(instruction uint16) {
 
 func (cpu *CPU) LDF(instruction uint16) {
 	cpu.I = uint16(0x0100) + (uint16(cpu.getVx(instruction)))
+}
+
+func (cpu *CPU) LDVXVY(instruction uint16) {
+	cpu.setRegisterFromVx(instruction, cpu.getVy(instruction))
 }
 
 func (cpu *CPU) LDB(instruction uint16) {
